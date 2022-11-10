@@ -69,7 +69,7 @@ sub process_guide($ccre, $grna) {
 }
 
 say("ccre_id,ccre_type,ccre_chrm,ccre_start,ccre_end,grna_sequence,grna_chrm,grna_start,grna_strand,"
-    . "distance_0_matches,distance_1_matches,distance_2_matches,distance_3_matches,distance_4_matches,"
+    . "distance_1_matches,distance_2_matches,distance_3_matches,distance_4_matches,"
     . "cutting_efficiency,specificity");
 
 my $pid = open(GRNA_DB, "samtools view $grna_db |") or die "Couldn't fork: $!\n";
@@ -78,6 +78,7 @@ while (<GRNA_DB>) {
     my @fields = split /\s+/, $_;
     my ($grna_chrm, $grna_start, $grna_strand) = $fields[0] =~ /(\w+):(\d+):([+\-])/;
     $grna_start = int($grna_start);
+    next if (!(exists $ccre_interval_trees{$grna_chrm}));
     my $matching_ccres = ($ccre_interval_trees{$grna_chrm})->find($grna_start, $grna_start + 1);
 
     for my $ccre (@$matching_ccres) {
