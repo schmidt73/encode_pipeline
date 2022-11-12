@@ -25,6 +25,6 @@ my $output_dir = "results/candidates/" . basename($ccre_file, ".V4.bed");
 
 for my $grna_db (glob('../experiment14/organisms/k4/hg38_no_alt/results/split_dbs_scored/*.bam')) {
     my $number = basename($grna_db, ".bam");
-    my $r = `bsub "perl scripts/find_ccre_grnas.pl --ccres $ccre_file --grna-db $grna_db > $output_dir/$number.csv"`;
+    my $r = `bsub -R "rusage[mem=8GB]" "perl scripts/find_ccre_grnas.pl --ccres $ccre_file --grna-db $grna_db > $output_dir/$number.csv"`;
     print $r;
 }
