@@ -4,6 +4,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from loguru import logger
+
+from tqdm import tqdm
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -37,51 +40,59 @@ def has_monopolymer(sequence):
 if __name__ == "__main__":
     args = parse_args()
 
-    ccres = {}
+    ccres_to_center = {}
     with open(args.ccres, 'r') as f:
         for line in f:
             chrm, start, end, rdhs_id, ccre_id, ccre_type = line.split()
             start, end = int(start), int(end)
             center = start + (end - start) // 2
-            ccres[rdhs_id] = (chrm, int(start), int(end), ccre_type, center)
+            # ccres[rdhs_id] = (chrm, int(start), int(end), ccre_type, center)
+            ccres_to_center[rdhs_id] = center
+
+    logger.info("Loaded cCREs")
             
-    candidate_grnas = pd.read_csv(args.candidate_ccre_grnas)
-    candidate_grnas['cutting_position'] = candidate_grnas.apply(
-        lambda r:  r.grna_start + 17 if r.grna_strand == '+' else r.grna_start - 6,
-        axis=1
-    )
+    candidate_grnas = pd.read_csv(args.candidate_ccre_grnas)#.set_index("ccre_id")
+    logger.info("Loaded candidate gRNAs")
 
-    candidate_grnas['ccre_center'] = candidate_grnas.ccre_id.apply(
-        lambda ccre_id: ccres[ccre_id][4]
-    )
+    forward_strand_rows = candidate_grnas['grna_strand'] == '+'
 
+    candidate_grnas['cutting_position'] = candidate_grnas['grna_start']
+    candidate_grnas.loc[forward_strand_rows, 'cutting_position'] += 17
+    candidate_grnas.loc[~forward_strand_rows, 'cutting_position'] -= 6
+    logger.info("Computed cutting position")
+
+    candidate_grnas['ccre_center'] = candidate_grnas.ccre_id.map(ccres_to_center)
     candidate_grnas['ccre_distance'] = np.abs(candidate_grnas.ccre_center - candidate_grnas.cutting_position)
-    candidate_grnas = candidate_grnas.sort_values(["ccre_id", "ccre_distance"], ascending=True).groupby("ccre_id").apply(
-        lambda df: df.head(20).drop(columns=["ccre_id"])
-    ).reset_index().drop(columns=["level_1"])
+    logger.info("Computed distance to ccre center")
 
-    print(candidate_grnas)
+    candidate_grnas = candidate_grnas[candidate_grnas.specificity >= 0.2]
+    candidate_grnas = candidate_grnas[~candidate_grnas.grna_sequence.map(has_monopolymer)]
 
-    fig, ax = plt.subplots()
-    grnas_per_region = candidate_grnas.groupby("ccre_id").ccre_type.count()
-    sns.histplot(data=grnas_per_region, ax=ax)
-    ax.set_xlabel("Number of gRNAs per cCRE")
+    logger.info("Processing cCRE groups...")
+    ccre_dfs = []
+    for ccre_id, df in tqdm(candidate_grnas.groupby("ccre_id")):
+        sorted_ccre_df = df.sort_values("ccre_distance", ascending=True).head(20)
+        ccre_dfs.append(sorted_ccre_df)
+
+    candidate_grnas = pd.concat(ccre_dfs)
+
+    # fig, ax = plt.subplots()
+    # grnas_per_region = candidate_grnas.groupby("ccre_id").ccre_type.count()
+    # sns.histplot(data=grnas_per_region, ax=ax)
+    # ax.set_xlabel("Number of gRNAs per cCRE")
 
     try:
         os.mkdir(args.output)
     except FileExistsError:
         pass
 
-    candidate_grnas.to_csv(f"{args.output}/unfiltered_grnas.csv")
-
-    candidate_grnas = candidate_grnas[candidate_grnas.specificity >= 0.2]
-    candidate_grnas = candidate_grnas[~candidate_grnas.grna_sequence.apply(has_monopolymer)]
+    # candidate_grnas.to_csv(f"{args.output}/unfiltered_grnas.csv")
 
     candidate_grnas.to_csv(f"{args.output}/filtered_grnas.csv")
 
-    fig, ax = plt.subplots()
-    grnas_per_region = candidate_grnas.groupby("ccre_id").ccre_type.count()
-    sns.histplot(data=grnas_per_region, ax=ax)
-    ax.set_xlabel("Number of gRNAs per cCRE after filtering")
+    # fig, ax = plt.subplots()
+    # grnas_per_region = candidate_grnas.groupby("ccre_id").ccre_type.count()
+    # sns.histplot(data=grnas_per_region, ax=ax)
+    # ax.set_xlabel("Number of gRNAs per cCRE after filtering")
 
-    plt.show()
+    # plt.show()
