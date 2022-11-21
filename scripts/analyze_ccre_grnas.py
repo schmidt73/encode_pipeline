@@ -31,11 +31,20 @@ def parse_args():
 
     return p.parse_args()
 
+def revcom(s):
+    basecomp = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A', 'U': 'A', 'N': 'N'}
+    letters = list(s[::-1])
+    letters = [(basecomp[base] if base in basecomp else base) for base in letters]
+    return ''.join(letters)
+
 def has_monopolymer(sequence):
     for N in list("ATCG"):
         if (N * 4) in sequence:
             return True
     return False
+
+def has_monopolymerT(sequence):
+    return 'TTTT' in sequence
 
 if __name__ == "__main__":
     args = parse_args()
@@ -56,6 +65,13 @@ if __name__ == "__main__":
 
     forward_strand_rows = candidate_grnas['grna_strand'] == '+'
 
+    candidate_grnas["synthesis_sequence"] = candidate_grnas.apply(
+        lambda r: revcom(r.grna_sequence)[:20] if r.grna_strand == '-' else r.grna_sequence[:20],
+        axis=1
+    )
+
+    logger.info("Computed synthesis sequence.")
+
     candidate_grnas['cutting_position'] = candidate_grnas['grna_start']
     candidate_grnas.loc[forward_strand_rows, 'cutting_position'] += 17
     candidate_grnas.loc[~forward_strand_rows, 'cutting_position'] -= 6
@@ -65,8 +81,9 @@ if __name__ == "__main__":
     candidate_grnas['ccre_distance'] = np.abs(candidate_grnas.ccre_center - candidate_grnas.cutting_position)
     logger.info("Computed distance to ccre center")
 
-    candidate_grnas = candidate_grnas[candidate_grnas.specificity >= 0.2]
-    candidate_grnas = candidate_grnas[~candidate_grnas.grna_sequence.map(has_monopolymer)]
+    candidate_grnas['low_specificity'] = candidate_grnas.specificity < 0.2
+    candidate_grnas['poly4N'] = candidate_grnas.grna_sequence.map(has_monopolymer)
+    candidate_grnas['poly4T'] = candidate_grnas.grna_sequence.map(has_monopolymerT)
 
     logger.info("Processing cCRE groups...")
     ccre_dfs = []
@@ -88,6 +105,8 @@ if __name__ == "__main__":
 
     # candidate_grnas.to_csv(f"{args.output}/unfiltered_grnas.csv")
 
+    candidate_grnas.to_csv(f"{args.output}/unfiltered_grnas.csv")
+    candidate_grnas = candidate_grnas[~(candidate_grnas['poly4N'] | candidate_grnas['poly4T'] | candidate_grnas['low_specificity'])]
     candidate_grnas.to_csv(f"{args.output}/filtered_grnas.csv")
 
     # fig, ax = plt.subplots()
